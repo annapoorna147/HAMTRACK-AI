@@ -95,7 +95,7 @@ with tab_tracking:
 
     st.write(
         "Calculate satellite direction, distance, visibility, "
-        "upcoming passes, and sky position."
+        "upcoming passes, sky position, and predicted Doppler shift."
     )
 
     try:
@@ -159,8 +159,6 @@ with tab_tracking:
             f"{distance.km:,.1f} km"
         )
 
-        # Visibility message
-
         if elevation.degrees > 0:
             st.success(
                 "Satellite is geometrically above your horizon."
@@ -198,17 +196,10 @@ with tab_tracking:
             """
         )
 
-        # Azimuth is measured clockwise from north.
-        # Radius is angular distance from the zenith:
-        # elevation 90 degrees -> radius 0
-        # elevation 0 degrees  -> radius 90
-
         current_azimuth = float(azimuth.degrees)
         current_elevation = float(elevation.degrees)
 
         fig_compass = go.Figure()
-
-        # Draw the horizon circle.
 
         compass_angles = np.linspace(0, 360, 361)
 
@@ -218,15 +209,10 @@ with tab_tracking:
                 theta=compass_angles,
                 mode="lines",
                 name="Horizon",
-                line=dict(
-                    color="gray",
-                    width=2
-                ),
+                line=dict(color="gray", width=2),
                 hoverinfo="skip"
             )
         )
-
-        # Plot the satellite only when above the horizon.
 
         if current_elevation >= 0:
 
@@ -243,36 +229,27 @@ with tab_tracking:
                     marker=dict(
                         size=15,
                         color="#22D3EE",
-                        line=dict(
-                            color="white",
-                            width=1
-                        )
+                        line=dict(color="white", width=1)
                     ),
                     hovertemplate=(
                         "Azimuth: %{theta:.1f}°<br>"
                         "Angular distance from overhead: "
-                        "%{r:.1f}°"
-                        "<extra></extra>"
+                        "%{r:.1f}°<extra></extra>"
                     )
                 )
             )
 
             st.success(
                 "The satellite is above the horizon. "
-                "Its current direction is marked on the compass."
+                "Its direction is marked on the compass."
             )
 
         else:
 
             st.info(
                 "The satellite is below the horizon. "
-                "Its position is not shown inside the visible-sky "
-                "compass."
+                "Its position is not shown inside the visible-sky compass."
             )
-
-        # Compass layout:
-        # Rotation 90 places north at the top.
-        # Clockwise direction follows compass bearings.
 
         fig_compass.update_layout(
             title="Current Satellite Direction",
@@ -317,8 +294,6 @@ with tab_tracking:
             use_container_width=True
         )
 
-        # Show numerical compass interpretation.
-
         direction_labels = [
             "North",
             "Northeast",
@@ -334,13 +309,11 @@ with tab_tracking:
             int((current_azimuth + 22.5) // 45) % 8
         )
 
-        direction_name = direction_labels[direction_index]
-
         info1, info2, info3 = st.columns(3)
 
         info1.metric(
             "Compass direction",
-            direction_name
+            direction_labels[direction_index]
         )
 
         info2.metric(
@@ -359,6 +332,248 @@ with tab_tracking:
         )
 
         # ----------------------------------------------------
+        # DAY 4: SATELLITE DOPPLER PREDICTION
+        # ----------------------------------------------------
+
+        st.divider()
+        st.header("📻 Satellite Doppler Prediction")
+
+        st.write(
+            "Estimate radio-frequency shifts from the satellite's "
+            "changing distance to your ground station."
+        )
+
+        doppler_frequency_mhz = st.selectbox(
+            "Radio carrier frequency (MHz)",
+            [145.0, 435.0, 146.0, 437.0, 14.2],
+            index=0,
+            key="doppler_carrier_frequency"
+        )
+
+        doppler_duration_hours = st.selectbox(
+            "Prediction window",
+            [1, 3, 6, 12, 24],
+            index=2,
+            format_func=lambda h: f"Next {h} hour(s)",
+            key="doppler_prediction_window"
+        )
+
+        if st.button(
+            "Calculate satellite Doppler shift",
+            key="calculate_satellite_doppler"
+        ):
+
+            with st.spinner(
+                "Calculating satellite range rate and Doppler shift..."
+            ):
+
+                # Sample positions once per minute.
+                sample_minutes = np.arange(
+                    0,
+                    doppler_duration_hours * 60 + 1,
+                    1
+                )
+
+                doppler_times = timescale.tt_jd(
+                    now.tt + sample_minutes / (24 * 60)
+                )
+
+                topocentric_positions = (
+                    satellite - observer
+                ).at(doppler_times)
+
+                # Distance in metres.
+                ranges_m = (
+                    topocentric_positions.distance().km * 1000.0
+                )
+
+                # Range rate in metres/second.
+                # Positive = moving away.
+                # Negative = approaching.
+                range_rate_m_s = np.gradient(
+                    ranges_m,
+                    60.0
+                )
+
+                speed_of_light = 299_792_458.0
+                carrier_hz = doppler_frequency_mhz * 1e6
+
+                # First-order Doppler approximation.
+                doppler_hz = (
+                    -carrier_hz
+                    * range_rate_m_s
+                    / speed_of_light
+                )
+
+                received_frequency_hz = (
+                    carrier_hz + doppler_hz
+                )
+
+                # Metrics at the beginning of the prediction.
+                current_shift = float(doppler_hz[0])
+                current_range_rate = float(range_rate_m_s[0])
+                current_received_hz = float(
+                    received_frequency_hz[0]
+                )
+
+                metric1, metric2, metric3 = st.columns(3)
+
+                metric1.metric(
+                    "Predicted Doppler shift",
+                    f"{current_shift:+.1f} Hz"
+                )
+
+                metric2.metric(
+                    "Range rate",
+                    f"{current_range_rate:+.1f} m/s"
+                )
+
+                metric3.metric(
+                    "Predicted received frequency",
+                    f"{current_received_hz / 1e6:.6f} MHz"
+                )
+
+                if current_range_rate < 0:
+                    st.info(
+                        "The satellite is approaching the station. "
+                        "The predicted Doppler shift is positive."
+                    )
+                elif current_range_rate > 0:
+                    st.info(
+                        "The satellite is moving away from the station. "
+                        "The predicted Doppler shift is negative."
+                    )
+                else:
+                    st.info(
+                        "The range rate is approximately zero."
+                    )
+
+                elapsed_hours = sample_minutes / 60.0
+
+                # --------------------------------------------
+                # DOPPLER SHIFT GRAPH
+                # --------------------------------------------
+
+                st.subheader("1. Predicted Doppler Shift")
+
+                fig_doppler = go.Figure()
+
+                fig_doppler.add_trace(
+                    go.Scatter(
+                        x=elapsed_hours,
+                        y=doppler_hz,
+                        mode="lines",
+                        name="Doppler shift",
+                        line=dict(width=2),
+                        hovertemplate=(
+                            "Elapsed time: %{x:.2f} hours<br>"
+                            "Doppler shift: %{y:.2f} Hz"
+                            "<extra></extra>"
+                        )
+                    )
+                )
+
+                fig_doppler.add_hline(
+                    y=0,
+                    line_dash="dash",
+                    annotation_text="Zero Doppler"
+                )
+
+                fig_doppler.update_layout(
+                    title="Doppler Shift Over Time",
+                    xaxis_title="Hours from now",
+                    yaxis_title="Doppler shift (Hz)",
+                    template="plotly_dark",
+                    hovermode="x unified"
+                )
+
+                st.plotly_chart(
+                    fig_doppler,
+                    use_container_width=True
+                )
+
+                # --------------------------------------------
+                # RANGE RATE GRAPH
+                # --------------------------------------------
+
+                st.subheader("2. Satellite Range Rate")
+
+                fig_range = go.Figure()
+
+                fig_range.add_trace(
+                    go.Scatter(
+                        x=elapsed_hours,
+                        y=range_rate_m_s,
+                        mode="lines",
+                        name="Range rate",
+                        line=dict(width=2),
+                        hovertemplate=(
+                            "Elapsed time: %{x:.2f} hours<br>"
+                            "Range rate: %{y:.1f} m/s"
+                            "<extra></extra>"
+                        )
+                    )
+                )
+
+                fig_range.add_hline(
+                    y=0,
+                    line_dash="dash",
+                    annotation_text="Zero range rate"
+                )
+
+                fig_range.update_layout(
+                    title="Satellite Range Rate Over Time",
+                    xaxis_title="Hours from now",
+                    yaxis_title="Range rate (m/s)",
+                    template="plotly_dark",
+                    hovermode="x unified"
+                )
+
+                st.plotly_chart(
+                    fig_range,
+                    use_container_width=True
+                )
+
+                # --------------------------------------------
+                # RECEIVED FREQUENCY GRAPH
+                # --------------------------------------------
+
+                st.subheader("3. Predicted Received Frequency")
+
+                fig_received = go.Figure()
+
+                fig_received.add_trace(
+                    go.Scatter(
+                        x=elapsed_hours,
+                        y=received_frequency_hz / 1e6,
+                        mode="lines",
+                        name="Received frequency",
+                        line=dict(width=2)
+                    )
+                )
+
+                fig_received.update_layout(
+                    title="Predicted Received Frequency Over Time",
+                    xaxis_title="Hours from now",
+                    yaxis_title="Frequency (MHz)",
+                    template="plotly_dark",
+                    hovermode="x unified"
+                )
+
+                st.plotly_chart(
+                    fig_received,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Doppler is estimated from changes in orbital range. "
+                    "The model uses sampled positions and a first-order "
+                    "approximation. It does not measure a transmitted "
+                    "radio signal or include transmitter/receiver "
+                    "frequency errors."
+                )
+
+        # ----------------------------------------------------
         # UPCOMING SATELLITE PASSES
         # ----------------------------------------------------
 
@@ -375,9 +590,7 @@ with tab_tracking:
             key="calculate_passes"
         ):
 
-            with st.spinner(
-                "Calculating satellite passes..."
-            ):
+            with st.spinner("Calculating satellite passes..."):
 
                 end_time = timescale.tt_jd(
                     now.tt + 1.0
@@ -400,28 +613,19 @@ with tab_tracking:
                     event_types
                 ):
 
-                    # 0 = rise above the selected elevation
-                    # 1 = culmination / maximum elevation
-                    # 2 = set below the selected elevation
-
                     if event_type == 0:
-
-                        current_pass = {
-                            "rise": event_time
-                        }
+                        current_pass = {"rise": event_time}
 
                     elif (
                         event_type == 1
                         and "rise" in current_pass
                     ):
-
                         current_pass["maximum"] = event_time
 
                     elif (
                         event_type == 2
                         and "rise" in current_pass
                     ):
-
                         current_pass["set"] = event_time
 
                         if "maximum" in current_pass:
@@ -475,14 +679,11 @@ with tab_tracking:
                 )
 
         # ----------------------------------------------------
-        # 24-HOUR SATELLITE ELEVATION GRAPH
+        # 24-HOUR ELEVATION AND AZIMUTH GRAPHS
         # ----------------------------------------------------
 
         st.divider()
-
-        st.header(
-            "Satellite Elevation Over the Next 24 Hours"
-        )
+        st.header("Satellite Elevation Over the Next 24 Hours")
 
         st.write(
             "Positive elevation means the satellite is "
@@ -494,17 +695,9 @@ with tab_tracking:
             key="plot_satellite_path"
         ):
 
-            with st.spinner(
-                "Calculating satellite positions..."
-            ):
+            with st.spinner("Calculating satellite positions..."):
 
-                # Sample satellite positions every two minutes.
-
-                offsets = np.arange(
-                    0,
-                    24 * 60 + 1,
-                    2
-                )
+                offsets = np.arange(0, 24 * 60 + 1, 2)
 
                 future_times = timescale.tt_jd(
                     now.tt + offsets / (24 * 60)
@@ -518,13 +711,8 @@ with tab_tracking:
                     future_positions.altaz()
                 )
 
-                elevation_values = (
-                    future_elevation.degrees
-                )
-
-                azimuth_values = (
-                    future_azimuth.degrees
-                )
+                elevation_values = future_elevation.degrees
+                azimuth_values = future_azimuth.degrees
 
                 plot_times = [
                     now.utc_datetime()
@@ -540,12 +728,7 @@ with tab_tracking:
                         y=elevation_values,
                         mode="lines",
                         name="Elevation",
-                        line=dict(width=2),
-                        hovertemplate=(
-                            "Time: %{x}<br>"
-                            "Elevation: %{y:.2f}°"
-                            "<extra></extra>"
-                        )
+                        line=dict(width=2)
                     )
                 )
 
@@ -575,13 +758,7 @@ with tab_tracking:
                     use_container_width=True
                 )
 
-                # --------------------------------------------
-                # 24-HOUR SATELLITE AZIMUTH GRAPH
-                # --------------------------------------------
-
-                st.subheader(
-                    "Predicted Satellite Azimuth"
-                )
+                st.subheader("Predicted Satellite Azimuth")
 
                 fig_azimuth = go.Figure()
 
@@ -591,12 +768,7 @@ with tab_tracking:
                         y=azimuth_values,
                         mode="lines",
                         name="Azimuth",
-                        line=dict(width=2),
-                        hovertemplate=(
-                            "Time: %{x}<br>"
-                            "Azimuth: %{y:.1f}°"
-                            "<extra></extra>"
-                        )
+                        line=dict(width=2)
                     )
                 )
 
@@ -615,7 +787,7 @@ with tab_tracking:
                 )
 
                 st.caption(
-                    "Graphs show predicted orbital positions, "
+                    "These graphs show predicted orbital positions, "
                     "not actual radio reception. Positions are "
                     "sampled every two minutes."
                 )
@@ -630,9 +802,7 @@ with tab_tracking:
             "Check your internet connection and try again."
         )
 
-        st.caption(
-            f"Technical details: {error}"
-        )
+        st.caption(f"Technical details: {error}")
 
 # ============================================================
 # TAB 2: SIGNAL LABORATORY
@@ -643,8 +813,8 @@ with tab_signals:
     st.header("Signal Laboratory")
 
     st.write(
-        "Explore simulated radio signals, noise, Doppler "
-        "shift, and FFT frequency spectra."
+        "Explore simulated radio signals, noise, Doppler shift, "
+        "and FFT frequency spectra."
     )
 
     st.sidebar.header("Signal Settings")
@@ -669,20 +839,13 @@ with tab_signals:
         10
     )
 
-    # --------------------------------------------------------
-    # FIRST-ORDER DOPPLER SHIFT
-    # --------------------------------------------------------
-
+    # Original simulator's first-order Doppler calculation.
     speed_of_light = 299_792_458
 
     doppler_shift = (
         -frequency_mhz * 1e6 * velocity
         / speed_of_light
     )
-
-    # --------------------------------------------------------
-    # SIMULATED BASEBAND SIGNAL
-    # --------------------------------------------------------
 
     sample_rate = 20_000
     duration = 0.05
@@ -692,9 +855,13 @@ with tab_signals:
 
     tone_frequency = 1000.0
 
-    received_frequency = (
-        tone_frequency + doppler_shift
+    # Apply Doppler shift to the baseband tone.
+    # This remains a simplified educational simulation.
+    baseband_shift = (
+        -tone_frequency * velocity / speed_of_light
     )
+
+    received_frequency = tone_frequency + baseband_shift
 
     rng = np.random.default_rng(42)
 
@@ -718,14 +885,11 @@ with tab_signals:
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "Carrier",
-        f"{frequency_mhz} MHz"
-    )
+    col1.metric("Carrier", f"{frequency_mhz} MHz")
 
     col2.metric(
-        "Doppler shift",
-        f"{doppler_shift:.2f} Hz"
+        "Carrier Doppler estimate",
+        f"{doppler_shift:+.2f} Hz"
     )
 
     col3.metric(
@@ -733,10 +897,7 @@ with tab_signals:
         f"{received_frequency:.2f} Hz"
     )
 
-    # --------------------------------------------------------
-    # TIME-DOMAIN SIGNAL
-    # --------------------------------------------------------
-
+    # Time-domain signal
     st.subheader("1. Received Signal")
 
     fig_time = go.Figure()
@@ -761,10 +922,7 @@ with tab_signals:
         use_container_width=True
     )
 
-    # --------------------------------------------------------
-    # FFT FREQUENCY SPECTRUM
-    # --------------------------------------------------------
-
+    # FFT spectrum
     st.subheader("2. FFT Frequency Spectrum")
 
     windowed_signal = (
@@ -805,9 +963,10 @@ with tab_signals:
     )
 
     st.info(
-        "This is simulated baseband data, not a real radio "
-        "recording. Doppler shift is calculated using a "
-        "first-order approximation."
+        "The Signal Laboratory uses simulated baseband data. "
+        "The carrier Doppler estimate and baseband demonstration "
+        "are separate calculations. Neither represents a measured "
+        "radio transmission."
     )
 
 # ============================================================
@@ -817,6 +976,6 @@ with tab_signals:
 st.divider()
 
 st.caption(
-    "HAMTRACK AI | Day 3 | Satellite Tracking, Sky-View Compass "
-    "& Signal Analysis"
+    "HAMTRACK AI | Day 4 | Satellite Tracking, Sky-View Compass, "
+    "Doppler Prediction & Signal Analysis"
 )
