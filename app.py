@@ -78,16 +78,86 @@ st.sidebar.caption(
 # APPLICATION TABS
 # ============================================================
 
-tab_tracking, tab_signals = st.tabs(
+tab_dashboard, tab_tracking, tab_doppler, tab_signals = st.tabs(
     [
+        "📊 Dashboard",
         "🛰️ Satellite Tracking",
-        "📻 Signal Laboratory"
+        "📡 Doppler Analysis",
+        "📻 Signal Laboratory",
     ]
 )
 
 # ============================================================
 # TAB 1: SATELLITE TRACKING
 # ============================================================
+
+
+with tab_dashboard:
+    st.title("📡 HAMTRACK AI Mission Dashboard")
+    st.caption(
+        "Amateur radio satellite tracking, orbital predictions "
+        "and signal analysis"
+    )
+
+    st.markdown("""
+    <style>
+    .dashboard-card {
+        padding: 18px;
+        border: 1px solid rgba(128,128,128,0.3);
+        border-radius: 14px;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.subheader("📍 Ground Station")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Latitude", f"{latitude:.4f}°")
+    col2.metric("Longitude", f"{longitude:.4f}°")
+    col3.metric("Altitude", f"{altitude:.0f} m")
+
+    st.divider()
+    st.subheader("🛰️ Mission Modules")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            '<div class="dashboard-card">'
+            '<h4>🛰️ Satellite Tracking</h4>'
+            '<p>Satellite position, sky-view compass, elevation '
+            'plots and upcoming pass predictions.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="dashboard-card">'
+            '<h4>📡 Doppler Analysis</h4>'
+            '<p>Predicted frequency shift, satellite range rate '
+            'and received-frequency analysis.</p></div>',
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        st.markdown(
+            '<div class="dashboard-card">'
+            '<h4>📻 Signal Laboratory</h4>'
+            '<p>Explore simulated radio waveforms, noise and '
+            'FFT frequency spectra.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="dashboard-card">'
+            '<h4>🌍 Ground Station</h4>'
+            '<p>Your configured station coordinates are used '
+            'for satellite pass calculations.</p></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.info(
+        "Choose Satellite Tracking or Signal Laboratory above "
+        "to explore the existing Day 4 tools. Signal Laboratory "
+        "results are simulations, not measurements from a physical receiver."
+    )
 
 with tab_tracking:
 
@@ -332,248 +402,6 @@ with tab_tracking:
         )
 
         # ----------------------------------------------------
-        # DAY 4: SATELLITE DOPPLER PREDICTION
-        # ----------------------------------------------------
-
-        st.divider()
-        st.header("📻 Satellite Doppler Prediction")
-
-        st.write(
-            "Estimate radio-frequency shifts from the satellite's "
-            "changing distance to your ground station."
-        )
-
-        doppler_frequency_mhz = st.selectbox(
-            "Radio carrier frequency (MHz)",
-            [145.0, 435.0, 146.0, 437.0, 14.2],
-            index=0,
-            key="doppler_carrier_frequency"
-        )
-
-        doppler_duration_hours = st.selectbox(
-            "Prediction window",
-            [1, 3, 6, 12, 24],
-            index=2,
-            format_func=lambda h: f"Next {h} hour(s)",
-            key="doppler_prediction_window"
-        )
-
-        if st.button(
-            "Calculate satellite Doppler shift",
-            key="calculate_satellite_doppler"
-        ):
-
-            with st.spinner(
-                "Calculating satellite range rate and Doppler shift..."
-            ):
-
-                # Sample positions once per minute.
-                sample_minutes = np.arange(
-                    0,
-                    doppler_duration_hours * 60 + 1,
-                    1
-                )
-
-                doppler_times = timescale.tt_jd(
-                    now.tt + sample_minutes / (24 * 60)
-                )
-
-                topocentric_positions = (
-                    satellite - observer
-                ).at(doppler_times)
-
-                # Distance in metres.
-                ranges_m = (
-                    topocentric_positions.distance().km * 1000.0
-                )
-
-                # Range rate in metres/second.
-                # Positive = moving away.
-                # Negative = approaching.
-                range_rate_m_s = np.gradient(
-                    ranges_m,
-                    60.0
-                )
-
-                speed_of_light = 299_792_458.0
-                carrier_hz = doppler_frequency_mhz * 1e6
-
-                # First-order Doppler approximation.
-                doppler_hz = (
-                    -carrier_hz
-                    * range_rate_m_s
-                    / speed_of_light
-                )
-
-                received_frequency_hz = (
-                    carrier_hz + doppler_hz
-                )
-
-                # Metrics at the beginning of the prediction.
-                current_shift = float(doppler_hz[0])
-                current_range_rate = float(range_rate_m_s[0])
-                current_received_hz = float(
-                    received_frequency_hz[0]
-                )
-
-                metric1, metric2, metric3 = st.columns(3)
-
-                metric1.metric(
-                    "Predicted Doppler shift",
-                    f"{current_shift:+.1f} Hz"
-                )
-
-                metric2.metric(
-                    "Range rate",
-                    f"{current_range_rate:+.1f} m/s"
-                )
-
-                metric3.metric(
-                    "Predicted received frequency",
-                    f"{current_received_hz / 1e6:.6f} MHz"
-                )
-
-                if current_range_rate < 0:
-                    st.info(
-                        "The satellite is approaching the station. "
-                        "The predicted Doppler shift is positive."
-                    )
-                elif current_range_rate > 0:
-                    st.info(
-                        "The satellite is moving away from the station. "
-                        "The predicted Doppler shift is negative."
-                    )
-                else:
-                    st.info(
-                        "The range rate is approximately zero."
-                    )
-
-                elapsed_hours = sample_minutes / 60.0
-
-                # --------------------------------------------
-                # DOPPLER SHIFT GRAPH
-                # --------------------------------------------
-
-                st.subheader("1. Predicted Doppler Shift")
-
-                fig_doppler = go.Figure()
-
-                fig_doppler.add_trace(
-                    go.Scatter(
-                        x=elapsed_hours,
-                        y=doppler_hz,
-                        mode="lines",
-                        name="Doppler shift",
-                        line=dict(width=2),
-                        hovertemplate=(
-                            "Elapsed time: %{x:.2f} hours<br>"
-                            "Doppler shift: %{y:.2f} Hz"
-                            "<extra></extra>"
-                        )
-                    )
-                )
-
-                fig_doppler.add_hline(
-                    y=0,
-                    line_dash="dash",
-                    annotation_text="Zero Doppler"
-                )
-
-                fig_doppler.update_layout(
-                    title="Doppler Shift Over Time",
-                    xaxis_title="Hours from now",
-                    yaxis_title="Doppler shift (Hz)",
-                    template="plotly_dark",
-                    hovermode="x unified"
-                )
-
-                st.plotly_chart(
-                    fig_doppler,
-                    use_container_width=True
-                )
-
-                # --------------------------------------------
-                # RANGE RATE GRAPH
-                # --------------------------------------------
-
-                st.subheader("2. Satellite Range Rate")
-
-                fig_range = go.Figure()
-
-                fig_range.add_trace(
-                    go.Scatter(
-                        x=elapsed_hours,
-                        y=range_rate_m_s,
-                        mode="lines",
-                        name="Range rate",
-                        line=dict(width=2),
-                        hovertemplate=(
-                            "Elapsed time: %{x:.2f} hours<br>"
-                            "Range rate: %{y:.1f} m/s"
-                            "<extra></extra>"
-                        )
-                    )
-                )
-
-                fig_range.add_hline(
-                    y=0,
-                    line_dash="dash",
-                    annotation_text="Zero range rate"
-                )
-
-                fig_range.update_layout(
-                    title="Satellite Range Rate Over Time",
-                    xaxis_title="Hours from now",
-                    yaxis_title="Range rate (m/s)",
-                    template="plotly_dark",
-                    hovermode="x unified"
-                )
-
-                st.plotly_chart(
-                    fig_range,
-                    use_container_width=True
-                )
-
-                # --------------------------------------------
-                # RECEIVED FREQUENCY GRAPH
-                # --------------------------------------------
-
-                st.subheader("3. Predicted Received Frequency")
-
-                fig_received = go.Figure()
-
-                fig_received.add_trace(
-                    go.Scatter(
-                        x=elapsed_hours,
-                        y=received_frequency_hz / 1e6,
-                        mode="lines",
-                        name="Received frequency",
-                        line=dict(width=2)
-                    )
-                )
-
-                fig_received.update_layout(
-                    title="Predicted Received Frequency Over Time",
-                    xaxis_title="Hours from now",
-                    yaxis_title="Frequency (MHz)",
-                    template="plotly_dark",
-                    hovermode="x unified"
-                )
-
-                st.plotly_chart(
-                    fig_received,
-                    use_container_width=True
-                )
-
-                st.caption(
-                    "Doppler is estimated from changes in orbital range. "
-                    "The model uses sampled positions and a first-order "
-                    "approximation. It does not measure a transmitted "
-                    "radio signal or include transmitter/receiver "
-                    "frequency errors."
-                )
-
-        # ----------------------------------------------------
         # UPCOMING SATELLITE PASSES
         # ----------------------------------------------------
 
@@ -805,6 +633,254 @@ with tab_tracking:
         st.caption(f"Technical details: {error}")
 
 # ============================================================
+# ============================================================
+# DAY 5: DEDICATED DOPPLER ANALYSIS TAB
+# ============================================================
+
+with tab_doppler:
+    # DAY 4: SATELLITE DOPPLER PREDICTION
+    # ----------------------------------------------------
+
+    st.divider()
+    st.header("📻 Satellite Doppler Prediction")
+
+    st.write(
+        "Estimate radio-frequency shifts from the satellite's "
+        "changing distance to your ground station."
+    )
+
+    doppler_frequency_mhz = st.selectbox(
+        "Radio carrier frequency (MHz)",
+        [145.0, 435.0, 146.0, 437.0, 14.2],
+        index=0,
+        key="doppler_carrier_frequency"
+    )
+
+    doppler_duration_hours = st.selectbox(
+        "Prediction window",
+        [1, 3, 6, 12, 24],
+        index=2,
+        format_func=lambda h: f"Next {h} hour(s)",
+        key="doppler_prediction_window"
+    )
+
+    if st.button(
+        "Calculate satellite Doppler shift",
+        key="calculate_satellite_doppler"
+    ):
+
+        with st.spinner(
+            "Calculating satellite range rate and Doppler shift..."
+        ):
+
+            # Sample positions once per minute.
+            sample_minutes = np.arange(
+                0,
+                doppler_duration_hours * 60 + 1,
+                1
+            )
+
+            doppler_times = timescale.tt_jd(
+                now.tt + sample_minutes / (24 * 60)
+            )
+
+            topocentric_positions = (
+                satellite - observer
+            ).at(doppler_times)
+
+            # Distance in metres.
+            ranges_m = (
+                topocentric_positions.distance().km * 1000.0
+            )
+
+            # Range rate in metres/second.
+            # Positive = moving away.
+            # Negative = approaching.
+            range_rate_m_s = np.gradient(
+                ranges_m,
+                60.0
+            )
+
+            speed_of_light = 299_792_458.0
+            carrier_hz = doppler_frequency_mhz * 1e6
+
+            # First-order Doppler approximation.
+            doppler_hz = (
+                -carrier_hz
+                * range_rate_m_s
+                / speed_of_light
+            )
+
+            received_frequency_hz = (
+                carrier_hz + doppler_hz
+            )
+
+            # Metrics at the beginning of the prediction.
+            current_shift = float(doppler_hz[0])
+            current_range_rate = float(range_rate_m_s[0])
+            current_received_hz = float(
+                received_frequency_hz[0]
+            )
+
+            metric1, metric2, metric3 = st.columns(3)
+
+            metric1.metric(
+                "Predicted Doppler shift",
+                f"{current_shift:+.1f} Hz"
+            )
+
+            metric2.metric(
+                "Range rate",
+                f"{current_range_rate:+.1f} m/s"
+            )
+
+            metric3.metric(
+                "Predicted received frequency",
+                f"{current_received_hz / 1e6:.6f} MHz"
+            )
+
+            if current_range_rate < 0:
+                st.info(
+                    "The satellite is approaching the station. "
+                    "The predicted Doppler shift is positive."
+                )
+            elif current_range_rate > 0:
+                st.info(
+                    "The satellite is moving away from the station. "
+                    "The predicted Doppler shift is negative."
+                )
+            else:
+                st.info(
+                    "The range rate is approximately zero."
+                )
+
+            elapsed_hours = sample_minutes / 60.0
+
+            # --------------------------------------------
+            # DOPPLER SHIFT GRAPH
+            # --------------------------------------------
+
+            st.subheader("1. Predicted Doppler Shift")
+
+            fig_doppler = go.Figure()
+
+            fig_doppler.add_trace(
+                go.Scatter(
+                    x=elapsed_hours,
+                    y=doppler_hz,
+                    mode="lines",
+                    name="Doppler shift",
+                    line=dict(width=2),
+                    hovertemplate=(
+                        "Elapsed time: %{x:.2f} hours<br>"
+                        "Doppler shift: %{y:.2f} Hz"
+                        "<extra></extra>"
+                    )
+                )
+            )
+
+            fig_doppler.add_hline(
+                y=0,
+                line_dash="dash",
+                annotation_text="Zero Doppler"
+            )
+
+            fig_doppler.update_layout(
+                title="Doppler Shift Over Time",
+                xaxis_title="Hours from now",
+                yaxis_title="Doppler shift (Hz)",
+                template="plotly_dark",
+                hovermode="x unified"
+            )
+
+            st.plotly_chart(
+                fig_doppler,
+                use_container_width=True
+            )
+
+            # --------------------------------------------
+            # RANGE RATE GRAPH
+            # --------------------------------------------
+
+            st.subheader("2. Satellite Range Rate")
+
+            fig_range = go.Figure()
+
+            fig_range.add_trace(
+                go.Scatter(
+                    x=elapsed_hours,
+                    y=range_rate_m_s,
+                    mode="lines",
+                    name="Range rate",
+                    line=dict(width=2),
+                    hovertemplate=(
+                        "Elapsed time: %{x:.2f} hours<br>"
+                        "Range rate: %{y:.1f} m/s"
+                        "<extra></extra>"
+                    )
+                )
+            )
+
+            fig_range.add_hline(
+                y=0,
+                line_dash="dash",
+                annotation_text="Zero range rate"
+            )
+
+            fig_range.update_layout(
+                title="Satellite Range Rate Over Time",
+                xaxis_title="Hours from now",
+                yaxis_title="Range rate (m/s)",
+                template="plotly_dark",
+                hovermode="x unified"
+            )
+
+            st.plotly_chart(
+                fig_range,
+                use_container_width=True
+            )
+
+            # --------------------------------------------
+            # RECEIVED FREQUENCY GRAPH
+            # --------------------------------------------
+
+            st.subheader("3. Predicted Received Frequency")
+
+            fig_received = go.Figure()
+
+            fig_received.add_trace(
+                go.Scatter(
+                    x=elapsed_hours,
+                    y=received_frequency_hz / 1e6,
+                    mode="lines",
+                    name="Received frequency",
+                    line=dict(width=2)
+                )
+            )
+
+            fig_received.update_layout(
+                title="Predicted Received Frequency Over Time",
+                xaxis_title="Hours from now",
+                yaxis_title="Frequency (MHz)",
+                template="plotly_dark",
+                hovermode="x unified"
+            )
+
+            st.plotly_chart(
+                fig_received,
+                use_container_width=True
+            )
+
+            st.caption(
+                "Doppler is estimated from changes in orbital range. "
+                "The model uses sampled positions and a first-order "
+                "approximation. It does not measure a transmitted "
+                "radio signal or include transmitter/receiver "
+                "frequency errors."
+            )
+
+    # ----------------------------------------------------
+
 # TAB 2: SIGNAL LABORATORY
 # ============================================================
 
@@ -977,5 +1053,5 @@ st.divider()
 
 st.caption(
     "HAMTRACK AI | Day 4 | Satellite Tracking, Sky-View Compass, "
-    "Doppler Prediction & Signal Analysis"
+    "Day 5 | Dashboard, Satellite Tracking, Doppler Analysis & Signal Laboratory"
 )
