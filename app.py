@@ -3,12 +3,12 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 from skyfield.api import load, wgs84
 
-# ==================================================
+# ============================================================
 # PAGE CONFIGURATION
-# ==================================================
+# ============================================================
 
 st.set_page_config(
     page_title="HAMTRACK AI",
@@ -21,12 +21,12 @@ st.subheader("Amateur Radio Signal Laboratory")
 
 st.write(
     "Explore satellite tracking, orbital predictions, "
-    "Doppler shift, and radio signal analysis."
+    "sky-view direction, Doppler shift, and signal analysis."
 )
 
-# ==================================================
-# SATELLITE DATA
-# ==================================================
+# ============================================================
+# SATELLITE ORBITAL DATA
+# ============================================================
 
 TLE_URL = (
     "https://celestrak.org/NORAD/elements/"
@@ -39,9 +39,9 @@ def get_satellites():
     return load.tle_file(TLE_URL, reload=True)
 
 
-# ==================================================
-# SIDEBAR: GROUND STATION
-# ==================================================
+# ============================================================
+# GROUND STATION SETTINGS
+# ============================================================
 
 st.sidebar.header("Ground Station")
 
@@ -70,37 +70,43 @@ altitude = st.sidebar.number_input(
 )
 
 st.sidebar.caption(
-    "Coordinates are editable. Replace them with "
-    "your actual ground-station coordinates."
+    "Enter your ground-station coordinates. "
+    "The initial values are approximate for Tumakuru."
 )
 
-# ==================================================
-# TABS
-# ==================================================
+# ============================================================
+# APPLICATION TABS
+# ============================================================
 
 tab_tracking, tab_signals = st.tabs(
-    ["🛰️ Satellite Tracking", "📻 Signal Laboratory"]
+    [
+        "🛰️ Satellite Tracking",
+        "📻 Signal Laboratory"
+    ]
 )
 
-# ==================================================
+# ============================================================
 # TAB 1: SATELLITE TRACKING
-# ==================================================
+# ============================================================
 
 with tab_tracking:
 
     st.header("Real Satellite Tracking")
 
     st.write(
-        "Calculate satellite direction, distance, "
-        "visibility, and upcoming passes."
+        "Calculate satellite direction, distance, visibility, "
+        "upcoming passes, and sky position."
     )
 
     try:
-        with st.spinner("Loading orbital data from CelesTrak..."):
+
+        with st.spinner(
+            "Loading satellite orbital data from CelesTrak..."
+        ):
             satellites = get_satellites()
 
         if not satellites:
-            st.error("No satellites were returned.")
+            st.error("No satellites were returned by CelesTrak.")
             st.stop()
 
         satellite_names = sorted(
@@ -118,6 +124,7 @@ with tab_tracking:
         )
 
         timescale = load.timescale()
+
         observer = wgs84.latlon(
             latitude,
             longitude,
@@ -126,7 +133,10 @@ with tab_tracking:
 
         now = timescale.now()
 
-        # Current satellite position
+        # ----------------------------------------------------
+        # CURRENT SATELLITE POSITION
+        # ----------------------------------------------------
+
         difference = satellite - observer
         position = difference.at(now)
 
@@ -149,6 +159,8 @@ with tab_tracking:
             f"{distance.km:,.1f} km"
         )
 
+        # Visibility message
+
         if elevation.degrees > 0:
             st.success(
                 "Satellite is geometrically above your horizon."
@@ -163,12 +175,195 @@ with tab_tracking:
             "data age, and ground-station coordinates."
         )
 
-        # ------------------------------------------
-        # UPCOMING SATELLITE PASSES
-        # ------------------------------------------
+        # ----------------------------------------------------
+        # DAY 3: SKY-VIEW COMPASS
+        # ----------------------------------------------------
 
         st.divider()
-        st.subheader("Upcoming Satellite Passes")
+        st.header("🧭 Sky-View Compass")
+
+        st.write(
+            "The compass shows the satellite's direction "
+            "relative to your ground station."
+        )
+
+        st.markdown(
+            """
+            - **North** is at the top.
+            - **East** is on the right.
+            - **South** is at the bottom.
+            - **West** is on the left.
+            - The centre represents directly overhead.
+            - The outer circle represents the horizon.
+            """
+        )
+
+        # Azimuth is measured clockwise from north.
+        # Radius is angular distance from the zenith:
+        # elevation 90 degrees -> radius 0
+        # elevation 0 degrees  -> radius 90
+
+        current_azimuth = float(azimuth.degrees)
+        current_elevation = float(elevation.degrees)
+
+        fig_compass = go.Figure()
+
+        # Draw the horizon circle.
+
+        compass_angles = np.linspace(0, 360, 361)
+
+        fig_compass.add_trace(
+            go.Scatterpolar(
+                r=[90.0] * len(compass_angles),
+                theta=compass_angles,
+                mode="lines",
+                name="Horizon",
+                line=dict(
+                    color="gray",
+                    width=2
+                ),
+                hoverinfo="skip"
+            )
+        )
+
+        # Plot the satellite only when above the horizon.
+
+        if current_elevation >= 0:
+
+            compass_radius = 90.0 - current_elevation
+
+            fig_compass.add_trace(
+                go.Scatterpolar(
+                    r=[compass_radius],
+                    theta=[current_azimuth],
+                    mode="markers+text",
+                    name="Satellite",
+                    text=["Satellite"],
+                    textposition="top center",
+                    marker=dict(
+                        size=15,
+                        color="#22D3EE",
+                        line=dict(
+                            color="white",
+                            width=1
+                        )
+                    ),
+                    hovertemplate=(
+                        "Azimuth: %{theta:.1f}°<br>"
+                        "Angular distance from overhead: "
+                        "%{r:.1f}°"
+                        "<extra></extra>"
+                    )
+                )
+            )
+
+            st.success(
+                "The satellite is above the horizon. "
+                "Its current direction is marked on the compass."
+            )
+
+        else:
+
+            st.info(
+                "The satellite is below the horizon. "
+                "Its position is not shown inside the visible-sky "
+                "compass."
+            )
+
+        # Compass layout:
+        # Rotation 90 places north at the top.
+        # Clockwise direction follows compass bearings.
+
+        fig_compass.update_layout(
+            title="Current Satellite Direction",
+            template="plotly_dark",
+            height=600,
+            showlegend=False,
+            polar=dict(
+                bgcolor="rgba(0,0,0,0)",
+                radialaxis=dict(
+                    range=[0, 90],
+                    tickmode="array",
+                    tickvals=[0, 30, 60, 90],
+                    ticktext=[
+                        "Overhead",
+                        "60° elevation",
+                        "30° elevation",
+                        "Horizon"
+                    ],
+                    gridcolor="gray",
+                    linecolor="gray"
+                ),
+                angularaxis=dict(
+                    direction="clockwise",
+                    rotation=90,
+                    tickmode="array",
+                    tickvals=[
+                        0, 45, 90, 135,
+                        180, 225, 270, 315
+                    ],
+                    ticktext=[
+                        "N", "NE", "E", "SE",
+                        "S", "SW", "W", "NW"
+                    ],
+                    gridcolor="gray",
+                    linecolor="gray"
+                )
+            )
+        )
+
+        st.plotly_chart(
+            fig_compass,
+            use_container_width=True
+        )
+
+        # Show numerical compass interpretation.
+
+        direction_labels = [
+            "North",
+            "Northeast",
+            "East",
+            "Southeast",
+            "South",
+            "Southwest",
+            "West",
+            "Northwest"
+        ]
+
+        direction_index = (
+            int((current_azimuth + 22.5) // 45) % 8
+        )
+
+        direction_name = direction_labels[direction_index]
+
+        info1, info2, info3 = st.columns(3)
+
+        info1.metric(
+            "Compass direction",
+            direction_name
+        )
+
+        info2.metric(
+            "Azimuth bearing",
+            f"{current_azimuth:.1f}°"
+        )
+
+        info3.metric(
+            "Elevation above horizon",
+            f"{current_elevation:.1f}°"
+        )
+
+        st.caption(
+            "The compass uses orbital calculations. "
+            "It does not control a physical antenna."
+        )
+
+        # ----------------------------------------------------
+        # UPCOMING SATELLITE PASSES
+        # ----------------------------------------------------
+
+        st.divider()
+        st.header("Upcoming Satellite Passes")
 
         st.write(
             "Find complete passes above a 10° elevation "
@@ -180,7 +375,9 @@ with tab_tracking:
             key="calculate_passes"
         ):
 
-            with st.spinner("Calculating satellite passes..."):
+            with st.spinner(
+                "Calculating satellite passes..."
+            ):
 
                 end_time = timescale.tt_jd(
                     now.tt + 1.0
@@ -199,10 +396,16 @@ with tab_tracking:
                 current_pass = {}
 
                 for event_time, event_type in zip(
-                    event_times, event_types
+                    event_times,
+                    event_types
                 ):
 
+                    # 0 = rise above the selected elevation
+                    # 1 = culmination / maximum elevation
+                    # 2 = set below the selected elevation
+
                     if event_type == 0:
+
                         current_pass = {
                             "rise": event_time
                         }
@@ -211,12 +414,14 @@ with tab_tracking:
                         event_type == 1
                         and "rise" in current_pass
                     ):
+
                         current_pass["maximum"] = event_time
 
                     elif (
                         event_type == 2
                         and "rise" in current_pass
                     ):
+
                         current_pass["set"] = event_time
 
                         if "maximum" in current_pass:
@@ -269,13 +474,13 @@ with tab_tracking:
                     hide_index=True
                 )
 
-        # ------------------------------------------
-        # 24-HOUR ELEVATION GRAPH
-        # ------------------------------------------
+        # ----------------------------------------------------
+        # 24-HOUR SATELLITE ELEVATION GRAPH
+        # ----------------------------------------------------
 
         st.divider()
 
-        st.subheader(
+        st.header(
             "Satellite Elevation Over the Next 24 Hours"
         )
 
@@ -293,7 +498,8 @@ with tab_tracking:
                 "Calculating satellite positions..."
             ):
 
-                # Sample every two minutes
+                # Sample satellite positions every two minutes.
+
                 offsets = np.arange(
                     0,
                     24 * 60 + 1,
@@ -369,12 +575,12 @@ with tab_tracking:
                     use_container_width=True
                 )
 
-                # ----------------------------------
-                # AZIMUTH GRAPH
-                # ----------------------------------
+                # --------------------------------------------
+                # 24-HOUR SATELLITE AZIMUTH GRAPH
+                # --------------------------------------------
 
                 st.subheader(
-                    "Satellite Compass Direction"
+                    "Predicted Satellite Azimuth"
                 )
 
                 fig_azimuth = go.Figure()
@@ -395,7 +601,7 @@ with tab_tracking:
                 )
 
                 fig_azimuth.update_layout(
-                    title="Predicted Satellite Azimuth",
+                    title="Satellite Compass Direction Over Time",
                     xaxis_title="Time (UTC)",
                     yaxis_title="Azimuth (degrees)",
                     yaxis_range=[0, 360],
@@ -409,7 +615,7 @@ with tab_tracking:
                 )
 
                 st.caption(
-                    "Graphs show calculated orbital positions, "
+                    "Graphs show predicted orbital positions, "
                     "not actual radio reception. Positions are "
                     "sampled every two minutes."
                 )
@@ -428,17 +634,17 @@ with tab_tracking:
             f"Technical details: {error}"
         )
 
-# ==================================================
-# TAB 2: ORIGINAL SIGNAL LABORATORY
-# ==================================================
+# ============================================================
+# TAB 2: SIGNAL LABORATORY
+# ============================================================
 
 with tab_signals:
 
     st.header("Signal Laboratory")
 
     st.write(
-        "Explore simulated radio signals, noise, "
-        "Doppler shift, and FFT frequency spectra."
+        "Explore simulated radio signals, noise, Doppler "
+        "shift, and FFT frequency spectra."
     )
 
     st.sidebar.header("Signal Settings")
@@ -463,7 +669,10 @@ with tab_signals:
         10
     )
 
-    # First-order Doppler shift
+    # --------------------------------------------------------
+    # FIRST-ORDER DOPPLER SHIFT
+    # --------------------------------------------------------
+
     speed_of_light = 299_792_458
 
     doppler_shift = (
@@ -471,7 +680,10 @@ with tab_signals:
         / speed_of_light
     )
 
-    # Simulated baseband signal
+    # --------------------------------------------------------
+    # SIMULATED BASEBAND SIGNAL
+    # --------------------------------------------------------
+
     sample_rate = 20_000
     duration = 0.05
     samples = int(sample_rate * duration)
@@ -521,7 +733,10 @@ with tab_signals:
         f"{received_frequency:.2f} Hz"
     )
 
-    # Time-domain plot
+    # --------------------------------------------------------
+    # TIME-DOMAIN SIGNAL
+    # --------------------------------------------------------
+
     st.subheader("1. Received Signal")
 
     fig_time = go.Figure()
@@ -546,7 +761,10 @@ with tab_signals:
         use_container_width=True
     )
 
-    # Frequency-domain plot
+    # --------------------------------------------------------
+    # FFT FREQUENCY SPECTRUM
+    # --------------------------------------------------------
+
     st.subheader("2. FFT Frequency Spectrum")
 
     windowed_signal = (
@@ -592,12 +810,13 @@ with tab_signals:
         "first-order approximation."
     )
 
-# ==================================================
+# ============================================================
 # FOOTER
-# ==================================================
+# ============================================================
 
 st.divider()
 
 st.caption(
-    "HAMTRACK AI | Day 2 | Satellite Tracking & Signal Analysis"
+    "HAMTRACK AI | Day 3 | Satellite Tracking, Sky-View Compass "
+    "& Signal Analysis"
 )
