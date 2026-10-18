@@ -6,6 +6,13 @@ import plotly.graph_objects as go
 from datetime import timedelta
 from skyfield.api import load, wgs84
 
+from hamtrack_math import (
+    calculate_doppler_shift,
+    calculate_received_frequency,
+    calculate_baseband_frequency,
+    generate_noisy_signal,
+)
+
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
@@ -701,18 +708,17 @@ with tab_doppler:
                 60.0
             )
 
-            speed_of_light = 299_792_458.0
             carrier_hz = doppler_frequency_mhz * 1e6
 
-            # First-order Doppler approximation.
-            doppler_hz = (
-                -carrier_hz
-                * range_rate_m_s
-                / speed_of_light
+            # Use shared, independently testable calculations.
+            doppler_hz = calculate_doppler_shift(
+                carrier_hz,
+                range_rate_m_s,
             )
 
-            received_frequency_hz = (
-                carrier_hz + doppler_hz
+            received_frequency_hz = calculate_received_frequency(
+                carrier_hz,
+                doppler_hz,
             )
 
             # Metrics at the beginning of the prediction.
@@ -915,49 +921,35 @@ with tab_signals:
         10
     )
 
-    # Original simulator's first-order Doppler calculation.
-    speed_of_light = 299_792_458
-
-    doppler_shift = (
-        -frequency_mhz * 1e6 * velocity
-        / speed_of_light
+    # Carrier Doppler estimate using the shared calculation.
+    doppler_shift = float(
+        calculate_doppler_shift(
+            frequency_mhz * 1e6,
+            velocity,
+        )
     )
 
     sample_rate = 20_000
     duration = 0.05
     samples = int(sample_rate * duration)
 
-    time = np.arange(samples) / sample_rate
-
     tone_frequency = 1000.0
 
-    # Apply Doppler shift to the baseband tone.
-    # This remains a simplified educational simulation.
-    baseband_shift = (
-        -tone_frequency * velocity / speed_of_light
+    # This is a simplified baseband simulation, not a real RF receiver.
+    received_frequency = float(
+        calculate_baseband_frequency(
+            tone_frequency,
+            velocity,
+        )
     )
 
-    received_frequency = tone_frequency + baseband_shift
-
-    rng = np.random.default_rng(42)
-
-    clean_signal = np.sin(
-        2 * np.pi * received_frequency * time
+    time, received_signal = generate_noisy_signal(
+        received_frequency,
+        sample_rate=sample_rate,
+        duration=duration,
+        snr_db=snr_db,
+        seed=42,
     )
-
-    signal_power = np.mean(clean_signal ** 2)
-
-    noise_power = (
-        signal_power / (10 ** (snr_db / 10))
-    )
-
-    noise = rng.normal(
-        0,
-        np.sqrt(noise_power),
-        samples
-    )
-
-    received_signal = clean_signal + noise
 
     col1, col2, col3 = st.columns(3)
 
