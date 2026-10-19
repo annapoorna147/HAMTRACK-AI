@@ -13,7 +13,7 @@ from hamtrack_math import (
     generate_noisy_signal,
 )
 
-from satellite_data import validate_satellites
+from satellite_loader import load_valid_satellites
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -46,8 +46,9 @@ TLE_URL = (
 @st.cache_resource(ttl=3600)
 def get_satellites():
     """Load and validate satellite orbital data from CelesTrak."""
-    satellites = load.tle_file(TLE_URL, reload=True)
-    return validate_satellites(satellites)
+    return load_valid_satellites(
+        lambda: load.tle_file(TLE_URL, reload=True)
+    )
 
 
 # ============================================================
