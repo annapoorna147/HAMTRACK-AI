@@ -14,6 +14,7 @@ from hamtrack_math import (
 )
 
 from satellite_loader import load_valid_satellites
+from earth_satellites import add_satellites_to_globe, load_amateur_satellites
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -179,6 +180,60 @@ with tab_tracking:
         "Calculate satellite direction, distance, visibility, "
         "upcoming passes, sky position, and predicted Doppler shift."
     )
+
+    # Combined NASA-textured Earth and satellite orbit explorer
+    st.divider()
+    st.subheader("🌍 3D Earth & Satellite Orbits")
+    st.write(
+        "Explore satellite trajectories and calculated positions "
+        "around the textured Earth."
+    )
+
+    try:
+        orbit_satellites = load_amateur_satellites()
+        orbit_names = sorted({sat.name for sat in orbit_satellites})
+
+        preferred_names = [
+            "OSCAR 7 (AO-7)",
+            "UOSAT 2 (UO-11)",
+            "ISS (ZARYA)",
+        ]
+        default_names = [
+            name for name in preferred_names if name in orbit_names
+        ]
+
+        selected_orbit_names = st.multiselect(
+            "Select satellites to display on the globe",
+            options=orbit_names,
+            default=default_names,
+            max_selections=5,
+            key="earth_orbit_satellite_selection",
+        )
+
+        if selected_orbit_names:
+            with st.spinner("Calculating 3D satellite orbits..."):
+                orbit_figure = add_satellites_to_globe(
+                    selected_orbit_names
+                )
+
+            st.plotly_chart(
+                orbit_figure,
+                use_container_width=True,
+                config={"displaylogo": False},
+                key="earth_satellite_orbit_globe",
+            )
+        else:
+            st.info("Select at least one satellite to display the globe.")
+
+        st.caption(
+            "Orbital paths use the local TLE file. Prediction accuracy "
+            "depends on the age and quality of the orbital data."
+        )
+
+    except Exception as orbit_error:
+        st.warning(
+            f"The 3D orbit explorer could not load: {orbit_error}"
+        )
 
     try:
 
