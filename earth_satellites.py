@@ -60,9 +60,11 @@ def calculate_orbit(satellite, timescale, now, samples=180):
 def add_satellites_to_globe(
     satellite_names=None,
     orbit_samples=180,
+    satellites=None,
 ):
-    """Create a globe with satellite markers and orbital paths."""
-    satellites = load_amateur_satellites()
+    """Create a globe using supplied satellite records or local TLE data."""
+    if satellites is None:
+        satellites = load_amateur_satellites()
     timescale = load.timescale(builtin=True)
     now = timescale.now()
 

@@ -190,7 +190,18 @@ with tab_tracking:
     )
 
     try:
-        orbit_satellites = load_amateur_satellites()
+        data_source = "CelesTrak (validated live data)"
+        try:
+            orbit_satellites = get_satellites()
+        except Exception as live_error:
+            orbit_satellites = load_amateur_satellites()
+            data_source = "local TLE fallback"
+            st.warning(
+                "Could not load live orbital data for the globe. "
+                "Using the local TLE file instead. "
+                f"Details: {live_error}"
+            )
+
         orbit_names = sorted({sat.name for sat in orbit_satellites})
 
         preferred_names = [
@@ -201,6 +212,8 @@ with tab_tracking:
         default_names = [
             name for name in preferred_names if name in orbit_names
         ]
+        if not default_names:
+            default_names = orbit_names[:3]
 
         selected_orbit_names = st.multiselect(
             "Select satellites to display on the globe",
@@ -213,7 +226,8 @@ with tab_tracking:
         if selected_orbit_names:
             with st.spinner("Calculating 3D satellite orbits..."):
                 orbit_figure = add_satellites_to_globe(
-                    selected_orbit_names
+                    selected_orbit_names,
+                    satellites=orbit_satellites,
                 )
 
             st.plotly_chart(
@@ -222,12 +236,26 @@ with tab_tracking:
                 config={"displaylogo": False},
                 key="earth_satellite_orbit_globe",
             )
+
+            selected_records = [
+                sat for sat in orbit_satellites
+                if sat.name in selected_orbit_names
+            ]
+            epoch_details = [
+                f"{sat.name}: {sat.epoch.utc_datetime().strftime('%Y-%m-%d %H:%M UTC')}"
+                for sat in selected_records
+            ]
+            st.caption(
+                f"Orbital data source: {data_source}. "
+                "TLE epoch (UTC): " + "; ".join(epoch_details)
+            )
         else:
             st.info("Select at least one satellite to display the globe.")
 
         st.caption(
-            "Orbital paths use the local TLE file. Prediction accuracy "
-            "depends on the age and quality of the orbital data."
+            "Orbital predictions depend on TLE age and quality. "
+            "The epoch is the reference time of the orbital elements, "
+            "not the time the data was downloaded."
         )
 
     except Exception as orbit_error:
