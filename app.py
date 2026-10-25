@@ -167,9 +167,9 @@ with tab_dashboard:
         )
 
     st.info(
-        "Choose Satellite Tracking or Signal Laboratory above "
-        "to explore the existing Day 4 tools. Signal Laboratory "
-        "results are simulations, not measurements from a physical receiver."
+        "Explore Satellite Tracking and Signal Laboratory. "
+        "Signal Laboratory results are simulations, not measurements "
+        "from a physical receiver."
     )
 
 with tab_tracking:
@@ -1126,12 +1126,12 @@ with tab_signals:
     )
 
 # ============================================================
-# FOOTER
+# APPLICATION FOOTER
 # ============================================================
 
 st.divider()
 
 st.caption(
-    "HAMTRACK AI | Day 4 | Satellite Tracking, Sky-View Compass, "
-    "Day 5 | Dashboard, Satellite Tracking, Doppler Analysis & Signal Laboratory"
+    "HAMTRACK-AI | Amateur Radio Signal Laboratory | "
+    "Satellite Tracking • Doppler Analysis • Signal Processing"
 )
