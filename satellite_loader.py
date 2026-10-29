@@ -18,3 +18,13 @@ def load_valid_satellites(loader):
         ) from error
 
     return validate_satellites(satellites)
+
+
+def load_satellites_with_fallback(primary_loader, fallback_loader):
+    """Load validated satellites from the primary source or fallback."""
+    try:
+        satellites = load_valid_satellites(primary_loader)
+        return satellites, "CelesTrak (live data)", None
+    except Exception as live_error:
+        satellites = load_valid_satellites(fallback_loader)
+        return satellites, "Local TLE fallback", live_error

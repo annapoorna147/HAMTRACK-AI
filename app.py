@@ -13,7 +13,10 @@ from hamtrack_math import (
     generate_noisy_signal,
 )
 
-from satellite_loader import load_valid_satellites
+from satellite_loader import (
+    load_valid_satellites,
+    load_satellites_with_fallback,
+)
 from earth_satellites import add_satellites_to_globe, load_amateur_satellites
 
 # ============================================================
@@ -266,20 +269,19 @@ with tab_tracking:
     try:
 
         with st.spinner("Loading satellite orbital data..."):
-            try:
-                satellites = get_satellites()
-                data_source = "CelesTrak (live data)"
-            except Exception as live_error:
-                satellites = load_valid_satellites(
-                    load_amateur_satellites
+            satellites, data_source, live_error = (
+                load_satellites_with_fallback(
+                    get_satellites,
+                    load_amateur_satellites,
                 )
-                data_source = "Local TLE fallback"
+            )
 
-                st.warning(
-                    "Could not load live satellite data. "
-                    "Using the local TLE file instead. "
-                    f"Details: {live_error}"
-                )
+        if live_error is not None:
+            st.warning(
+                "Could not load live satellite data. "
+                "Using the local TLE file instead. "
+                f"Details: {live_error}"
+            )
 
         st.caption(f"Satellite data source: {data_source}")
 
