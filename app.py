@@ -193,12 +193,16 @@ with tab_tracking:
     )
 
     try:
-        data_source = "CelesTrak (validated live data)"
-        try:
-            orbit_satellites = get_satellites()
-        except Exception as live_error:
-            orbit_satellites = load_amateur_satellites()
-            data_source = "local TLE fallback"
+        (
+            orbit_satellites,
+            data_source,
+            live_error,
+        ) = load_satellites_with_fallback(
+            get_satellites,
+            load_amateur_satellites,
+        )
+
+        if live_error is not None:
             st.warning(
                 "Could not load live orbital data for the globe. "
                 "Using the local TLE file instead. "
