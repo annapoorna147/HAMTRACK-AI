@@ -113,3 +113,17 @@ HAMTRACK-AI is an educational prototype under active development.
 ## Repository
 
 GitHub: https://github.com/annapoorna147/HAMTRACK-AI
+
+## Satellite Data and Fallback
+
+HAMTRACK-AI attempts to retrieve current amateur-satellite orbital
+elements from CelesTrak. If live data cannot be loaded or validated,
+the application can fall back to the local `amateur_satellites.tle` file.
+
+The local TLE file is a snapshot and may become outdated. Satellite
+positions and pass predictions calculated from stale orbital elements
+may be less accurate. For the best results, use current orbital data
+whenever an internet connection is available.
+
+The Signal Laboratory uses simulated signals; it does not receive
+live radio transmissions.
